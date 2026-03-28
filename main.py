@@ -4,7 +4,6 @@ import sys
 
 from PyQt6.QtCore import QRect
 from PyQt6.QtWidgets import QApplication
-from PIL import Image
 
 from config import load_config
 from core.api_client import ApiWorker
