@@ -17,3 +17,6 @@ Thumbs.db
 
 # Local debug/scratch scripts
 test_kimi_api.py
+
+# User settings (contains system prompt and history)
+settings.json

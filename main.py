@@ -11,6 +11,7 @@ from core.hotkey_listener import HotkeyThread
 from core.screenshot import crop_region, grab_fullscreen, image_to_base64
 from ui.floating_panel import FloatingPanel
 from ui.overlay_window import OverlayWindow
+from ui.settings_window import SettingsWindow
 from ui.tray_icon import create_tray_icon
 
 
@@ -73,8 +74,11 @@ def main():
 
     manager = PanelManager()
 
-    # Placeholder — settings window wired in Task 6
-    tray = create_tray_icon(app, on_settings=lambda: None)
+    def open_settings():
+        win = SettingsWindow(config_store)
+        win.exec()
+
+    tray = create_tray_icon(app, on_settings=open_settings)
 
     state: dict = {"screenshot": None, "overlay": None}
 
