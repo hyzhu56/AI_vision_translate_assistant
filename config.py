@@ -76,6 +76,13 @@ def save_settings(data: dict) -> None:
     )
 
 
+def remove_api_history_entry(history: list[dict], index: int) -> list[dict]:
+    """Return a new list with the entry at `index` removed. No-op for invalid index."""
+    if 0 <= index < len(history):
+        return history[:index] + history[index + 1:]
+    return list(history)
+
+
 def save_env_config(api_key: str, api_base: str, model: str) -> None:
     """Update KIMI_API_KEY / KIMI_API_BASE / KIMI_MODEL in .env file in-place."""
     lines: list[str] = []

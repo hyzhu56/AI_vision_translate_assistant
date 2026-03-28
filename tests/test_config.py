@@ -212,3 +212,26 @@ def test_save_settings_persists_api_history(tmp_path, monkeypatch):
     save_settings({"api_history": history})
     raw = json.loads(f.read_text(encoding="utf-8"))
     assert raw["api_history"] == history
+
+
+from config import remove_api_history_entry
+
+
+def test_remove_api_history_entry_removes_correct_item():
+    """remove_api_history_entry() removes the entry at the given zero-based index."""
+    history = [
+        {"api_key": "key-a", "api_base": "base-a", "model": "m-a"},
+        {"api_key": "key-b", "api_base": "base-b", "model": "m-b"},
+        {"api_key": "key-c", "api_base": "base-c", "model": "m-c"},
+    ]
+    result = remove_api_history_entry(history, 1)
+    assert len(result) == 2
+    assert result[0]["api_key"] == "key-a"
+    assert result[1]["api_key"] == "key-c"
+
+
+def test_remove_api_history_entry_ignores_invalid_index():
+    """remove_api_history_entry() returns unchanged list for out-of-range index."""
+    history = [{"api_key": "only", "api_base": "b", "model": "m"}]
+    assert remove_api_history_entry(history, 5) == history
+    assert remove_api_history_entry(history, -1) == history

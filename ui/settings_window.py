@@ -1,6 +1,6 @@
 import logging
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from config import save_env_config, save_settings
+from config import remove_api_history_entry, save_env_config, save_settings
 from core.api_client import ApiTestWorker
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ class SettingsWindow(QDialog):
         super().__init__(parent)
         self._config_store = config_store
         self._test_worker: ApiTestWorker | None = None
+        self._drag_pos: QPoint | None = None
 
         self.setWindowTitle("设置")
         self.setWindowFlags(
@@ -118,8 +119,17 @@ class SettingsWindow(QDialog):
             }
         """)
         self._api_history_combo.currentIndexChanged.connect(self._on_api_history_selected)
+        del_btn = QPushButton("🗑")
+        del_btn.setFixedSize(28, 28)
+        del_btn.setToolTip("删除选中的历史记录")
+        del_btn.setStyleSheet(
+            "QPushButton{background:transparent;border:none;font-size:13px;color:#555;}"
+            "QPushButton:hover{color:#ff6b6b;}"
+        )
+        del_btn.clicked.connect(self._on_delete_api_history)
         api_hist_row.addWidget(api_hist_lbl)
         api_hist_row.addWidget(self._api_history_combo)
+        api_hist_row.addWidget(del_btn)
         lay.addLayout(api_hist_row)
 
         # API Key row (with eye toggle)
@@ -259,6 +269,28 @@ class SettingsWindow(QDialog):
         shadow.setOffset(0, 4)
         self._container.setGraphicsEffect(shadow)
 
+    # ── Drag to move ──────────────────────────────────────────────────────────
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and event.pos().y() < 50:
+            self._drag_pos = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self._drag_pos is not None:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        super().mouseReleaseEvent(event)
+
     @staticmethod
     def _sep() -> QWidget:
         w = QWidget()
@@ -315,6 +347,22 @@ class SettingsWindow(QDialog):
             self._key_edit.setText(entry.get("api_key", ""))
             self._base_edit.setText(entry.get("api_base", ""))
             self._model_edit.setText(entry.get("model", ""))
+
+    def _on_delete_api_history(self):
+        """Delete the currently selected history entry from the dropdown and persist."""
+        idx = self._api_history_combo.currentIndex()
+        if idx <= 0:   # 0 is the placeholder item
+            return
+        history = list(self._config_store.get("api_history", []))
+        history = remove_api_history_entry(history, idx - 1)  # offset: combo[0] is placeholder
+        self._config_store["api_history"] = history
+        save_settings({
+            "panel_title": self._config_store.get("panel_title", ""),
+            "system_prompt": self._config_store.get("system_prompt", ""),
+            "prompt_history": self._config_store.get("prompt_history", []),
+            "api_history": history,
+        })
+        self._populate()  # refresh all dropdowns
 
     def _on_history_selected(self, index: int):
         if index <= 0:
@@ -389,4 +437,6 @@ class SettingsWindow(QDialog):
         })
 
         logger.debug("Settings saved")
-        self.accept()
+        self._status_lbl.setText("✓ 已保存")
+        self._status_lbl.setStyleSheet("color: #4caf50; font-size: 11px;")
+        self._populate()  # refresh API history dropdown to show new entry
