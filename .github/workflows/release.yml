@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Opt all actions into Node.js 24 runtime to suppress Node.js 20 deprecation
+# warnings. Remove once upstream actions natively ship Node.js 24 runners.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     name: Build (${{ matrix.os }} / ${{ matrix.arch }})
@@ -28,15 +33,12 @@ jobs:
             runner: windows-11-arm
             artifact: AI-Vision-Assistant-Windows-arm64.exe
 
-          - os: macOS
-            arch: Intel
-            runner: macos-13
-            artifact: AI-Vision-Assistant-macOS-Intel
-
+          # macos-13 (Intel) is no longer available on GitHub-hosted runners.
+          # The Apple Silicon binary runs on Intel Macs via Rosetta 2.
           - os: macOS
             arch: AppleSilicon
             runner: macos-latest
-            artifact: AI-Vision-Assistant-macOS-AppleSilicon
+            artifact: AI-Vision-Assistant-macOS
 
           - os: Linux
             arch: x64
@@ -156,8 +158,7 @@ jobs:
             |---|---|
             | Windows x64 | `AI-Vision-Assistant-Windows-x64.exe` |
             | Windows ARM64 | `AI-Vision-Assistant-Windows-arm64.exe` |
-            | macOS Intel | `AI-Vision-Assistant-macOS-Intel` |
-            | macOS Apple Silicon | `AI-Vision-Assistant-macOS-AppleSilicon` |
+            | macOS (Apple Silicon · Rosetta 2 compatible) | `AI-Vision-Assistant-macOS` |
             | Linux x64 | `AI-Vision-Assistant-Linux-x64` |
 
             ### 🚀 Quick Setup
