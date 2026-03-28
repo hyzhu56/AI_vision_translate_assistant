@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSizeGrip,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -21,6 +20,7 @@ PANEL_HEIGHT = 360
 FONT_SIZE_MIN = 10
 FONT_SIZE_MAX = 22
 FONT_SIZE_DEFAULT = 13
+_HANDLE_SIZE = 20  # px — corner resize handle hit area
 
 _BTN_STYLE = """
     QPushButton {{
@@ -33,8 +33,65 @@ _BTN_STYLE = """
 """
 
 
+# ── Corner resize handle ──────────────────────────────────────────────────────
+
+class _ResizeHandle(QWidget):
+    """Transparent 20×20 widget pinned to a panel corner.
+
+    Shows a directional resize cursor on hover and resizes the parent
+    window on drag.  corner = 'bl' (bottom-left) | 'br' (bottom-right).
+    """
+
+    def __init__(self, parent: "FloatingPanel", corner: str):
+        super().__init__(parent)
+        self._corner = corner
+        self._drag_start: QPoint | None = None
+        self._start_geo: QRect | None = None
+
+        self.setFixedSize(_HANDLE_SIZE, _HANDLE_SIZE)
+        self.setStyleSheet("background: transparent;")
+        cursor = (
+            Qt.CursorShape.SizeFDiagCursor
+            if corner == "br"
+            else Qt.CursorShape.SizeBDiagCursor
+        )
+        self.setCursor(cursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = event.globalPosition().toPoint()
+            self._start_geo = self.window().geometry()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self._drag_start is not None:
+            delta = event.globalPosition().toPoint() - self._drag_start
+            geo = self._start_geo
+            if self._corner == "br":
+                new_w = max(280, geo.width() + delta.x())
+                new_h = max(200, geo.height() + delta.y())
+                self.window().resize(new_w, new_h)
+            else:  # bl — right edge stays fixed
+                new_w = max(280, geo.width() - delta.x())
+                new_h = max(200, geo.height() + delta.y())
+                new_x = geo.right() - new_w + 1
+                self.window().setGeometry(new_x, geo.y(), new_w, new_h)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_start = None
+        self._start_geo = None
+        super().mouseReleaseEvent(event)
+
+
+# ── Floating panel ────────────────────────────────────────────────────────────
+
 class FloatingPanel(QWidget):
-    """Floating result panel with frosted dark style, pin toggle, and Markdown rendering."""
+    """Floating result panel — always on top, frosted dark style.
+
+    Pin button toggles auto-hide on focus loss (pinned = stays visible).
+    Window is always-on-top regardless of pin state.
+    """
 
     def __init__(self):
         super().__init__()
@@ -46,15 +103,21 @@ class FloatingPanel(QWidget):
         self._setup_window()
         self._setup_ui()
         self._setup_shadow()
+        self._setup_resize_handles()
+
+    # ── Window setup ──────────────────────────────────────────────────────────
 
     def _setup_window(self):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
+            | Qt.WindowType.WindowStaysOnTopHint   # always on top
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(PANEL_WIDTH, PANEL_HEIGHT)
         self.setMinimumSize(280, 200)
+
+    # ── UI ────────────────────────────────────────────────────────────────────
 
     def _setup_ui(self):
         self._container = QWidget(self)
@@ -75,15 +138,14 @@ class FloatingPanel(QWidget):
         container_layout.setContentsMargins(16, 12, 16, 12)
         container_layout.setSpacing(8)
 
-        # ── Top bar ──────────────────────────────────────────────────────────
+        # Top bar
         top_bar = QHBoxLayout()
 
-        title = QLabel("AI 助手")
+        title = QLabel("朱鸿宇的AI翻译助手")
         title.setStyleSheet("color: #888888; font-size: 12px;")
         top_bar.addWidget(title)
         top_bar.addStretch()
 
-        # Font size buttons
         font_btn_style = """
             QPushButton {
                 background: transparent;
@@ -111,6 +173,7 @@ class FloatingPanel(QWidget):
         self._pin_btn = QPushButton("📌")
         self._pin_btn.setFixedSize(28, 28)
         self._pin_btn.setStyleSheet(_BTN_STYLE.format(size=14))
+        self._pin_btn.setToolTip("固定面板（防止失焦隐藏）")
         self._pin_btn.clicked.connect(self._toggle_pin)
         top_bar.addWidget(self._pin_btn)
 
@@ -122,24 +185,19 @@ class FloatingPanel(QWidget):
 
         container_layout.addLayout(top_bar)
 
-        # ── Content area ─────────────────────────────────────────────────────
+        # Content
         self._browser = QTextBrowser()
         self._browser.setOpenExternalLinks(False)
         self._apply_browser_style()
         container_layout.addWidget(self._browser)
 
-        # ── Bottom bar ───────────────────────────────────────────────────────
+        # Bottom bar (label only — resize handles are overlay widgets)
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.addStretch()
         powered = QLabel("Kimi k2.5")
         powered.setStyleSheet("color: #444444; font-size: 10px;")
         bottom.addWidget(powered)
-
-        grip = QSizeGrip(self)
-        grip.setStyleSheet("QSizeGrip { background: transparent; }")
-        bottom.addWidget(grip)
-
         container_layout.addLayout(bottom)
 
     def _setup_shadow(self):
@@ -148,6 +206,26 @@ class FloatingPanel(QWidget):
         shadow.setColor(QColor(0, 0, 0, 160))
         shadow.setOffset(0, 4)
         self._container.setGraphicsEffect(shadow)
+
+    # ── Resize handles ────────────────────────────────────────────────────────
+
+    def _setup_resize_handles(self):
+        self._bl_handle = _ResizeHandle(self, "bl")
+        self._br_handle = _ResizeHandle(self, "br")
+        self._reposition_handles()
+
+    def _reposition_handles(self):
+        s = _HANDLE_SIZE
+        self._bl_handle.move(0, self.height() - s)
+        self._br_handle.move(self.width() - s, self.height() - s)
+        # Always above _container
+        self._bl_handle.raise_()
+        self._br_handle.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_bl_handle"):
+            self._reposition_handles()
 
     # ── Font size ─────────────────────────────────────────────────────────────
 
@@ -176,14 +254,16 @@ class FloatingPanel(QWidget):
             if self._content_text:
                 self._browser.setMarkdown(self._content_text)
 
-    # ── Pin toggle ────────────────────────────────────────────────────────────
+    # ── Pin (auto-hide control) ───────────────────────────────────────────────
 
     def _toggle_pin(self):
+        """Toggle whether the panel hides on focus loss.
+
+        Window stays-on-top regardless of pin state.
+        Pin = prevent auto-hide only.
+        """
         self._pinned = not self._pinned
         if self._pinned:
-            self.setWindowFlags(
-                self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
-            )
             self._pin_btn.setStyleSheet("""
                 QPushButton {
                     background: rgba(255,255,255,15);
@@ -193,20 +273,20 @@ class FloatingPanel(QWidget):
                     color: #aaaaaa;
                 }
             """)
-            logger.debug("Panel pinned")
+            self._pin_btn.setToolTip("取消固定（失焦自动隐藏）")
+            logger.debug("Panel pinned — auto-hide disabled")
         else:
-            self.setWindowFlags(
-                self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint
-            )
             self._pin_btn.setStyleSheet(_BTN_STYLE.format(size=14))
-            logger.debug("Panel unpinned")
-        self.show()
+            self._pin_btn.setToolTip("固定面板（防止失焦隐藏）")
+            logger.debug("Panel unpinned — auto-hide enabled")
 
-    # ── Drag to move ──────────────────────────────────────────────────────────
+    # ── Drag to move (title bar area) ─────────────────────────────────────────
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and event.pos().y() < 50:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._drag_pos = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -231,27 +311,24 @@ class FloatingPanel(QWidget):
         w = self.width()
         h = self.height()
 
-        # Try right of selection
         x = region.right() + margin
         y = region.top()
 
-        # If goes off right edge, try below selection
         if x + w > screen.right():
             x = region.left()
             y = region.bottom() + margin
 
-        # If goes off bottom, fall back to bottom-right corner
         if y + h > screen.bottom():
             x = screen.right() - w - margin
             y = screen.bottom() - h - margin
 
-        # Clamp to screen bounds
         x = max(screen.left(), min(x, screen.right() - w))
         y = max(screen.top(), min(y, screen.bottom() - h))
 
         self.move(x, y)
         self.show()
         self.raise_()
+        self.activateWindow()
 
     def append_chunk(self, text: str):
         """Append streaming text and re-render Markdown."""
@@ -264,7 +341,8 @@ class FloatingPanel(QWidget):
         """Display error message in red."""
         self._content_text = ""
         self._browser.setHtml(
-            f'<p style="color: #ff6b6b; font-size: {self._font_size}px;">⚠ 请求失败: {message}</p>'
+            f'<p style="color: #ff6b6b; font-size: {self._font_size}px;">'
+            f"⚠ 请求失败: {message}</p>"
         )
 
     def clear_content(self):
