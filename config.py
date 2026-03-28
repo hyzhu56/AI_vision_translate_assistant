@@ -22,6 +22,9 @@ def load_config(env_path: str = ".env") -> dict:
     if not api_key:
         raise ValueError("KIMI_API_KEY is missing or empty in .env file")
 
+    if not api_base:
+        raise ValueError("KIMI_API_BASE is empty in .env file")
+
     return {
         "api_key": api_key,
         "api_base": api_base,
