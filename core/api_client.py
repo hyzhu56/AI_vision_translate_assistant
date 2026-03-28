@@ -33,7 +33,7 @@ class ApiWorker(QThread):
             logger.debug("Starting streaming API request")
 
             response = client.chat.completions.create(
-                model="kimi-latest",
+                model="kimi-k2.5",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {

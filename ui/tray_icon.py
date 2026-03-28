@@ -1,27 +1,29 @@
-import base64
 import logging
 
-from PyQt6.QtGui import QAction, QIcon, QPixmap
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 logger = logging.getLogger(__name__)
 
-# 16x16 blue circle PNG icon (base64-encoded)
-_ICON_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA"
-    "X0lEQVR4nGNgoBAwMjAwMPz//58BF2ZiIEPTIGsYiDYAl2Yi"
-    "NTMQowkfGHgDGEYHIsMoSMOoF4wORAYGBgYAHpQKFfnbpDQA"
-    "AAAASUVORK5CYII="
-)
+
+def _make_icon() -> QIcon:
+    """Create a simple 16x16 tray icon using QPainter (no external assets needed)."""
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    # Draw a filled blue circle
+    painter.setBrush(QColor("#5B8FF9"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(1, 1, 14, 14)
+    painter.end()
+    return QIcon(pixmap)
 
 
 def create_tray_icon(app: QApplication) -> QSystemTrayIcon:
     """Create and configure the system tray icon with exit menu."""
-    # Load icon from embedded base64
-    icon_data = base64.b64decode(_ICON_B64)
-    pixmap = QPixmap()
-    pixmap.loadFromData(icon_data)
-    icon = QIcon(pixmap)
+    icon = _make_icon()
 
     tray = QSystemTrayIcon(icon, app)
 
