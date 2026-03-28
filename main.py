@@ -60,8 +60,12 @@ def main():
         if screenshot is None:
             return
 
+        # Scale logical-pixel region to physical pixels for PIL crop
+        dpr = QApplication.primaryScreen().devicePixelRatio()
         cropped = crop_region(
-            screenshot, region.x(), region.y(), region.right(), region.bottom()
+            screenshot,
+            int(region.x() * dpr), int(region.y() * dpr),
+            int(region.right() * dpr), int(region.bottom() * dpr),
         )
         b64 = image_to_base64(cropped)
 

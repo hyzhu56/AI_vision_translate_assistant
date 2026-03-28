@@ -3,7 +3,7 @@ import logging
 from PIL import Image
 from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor, QImage, QPainter, QPixmap
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QApplication, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class OverlayWindow(QWidget):
     def __init__(self, screenshot: Image.Image):
         super().__init__()
         self._screenshot = screenshot
+        self._dpr = QApplication.primaryScreen().devicePixelRatio()
         self._pixmap = self._pil_to_pixmap(screenshot)
         self._origin = QPoint()
         self._current = QPoint()
@@ -34,11 +35,13 @@ class OverlayWindow(QWidget):
         self.showFullScreen()
 
     def _pil_to_pixmap(self, pil_image: Image.Image) -> QPixmap:
-        """Convert PIL Image to QPixmap."""
+        """Convert PIL Image to QPixmap, tagging device pixel ratio for HiDPI screens."""
         rgb = pil_image.convert("RGB")
         data = rgb.tobytes("raw", "RGB")
         qimage = QImage(data, rgb.width, rgb.height, 3 * rgb.width, QImage.Format.Format_RGB888)
-        return QPixmap.fromImage(qimage)
+        pixmap = QPixmap.fromImage(qimage)
+        pixmap.setDevicePixelRatio(self._dpr)
+        return pixmap
 
     def paintEvent(self, event):
         painter = QPainter(self)
