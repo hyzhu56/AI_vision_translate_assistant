@@ -1,0 +1,190 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Windows
+            arch: x64
+            runner: windows-latest
+            artifact: AI-Vision-Assistant-Windows-x64.exe
+            pyinstaller_extra: ""
+
+          - os: Windows
+            arch: arm64
+            runner: windows-11-arm
+            artifact: AI-Vision-Assistant-Windows-arm64.exe
+            pyinstaller_extra: ""
+
+          - os: macOS
+            arch: Intel
+            runner: macos-13
+            artifact: AI-Vision-Assistant-macOS-Intel
+            pyinstaller_extra: ""
+
+          - os: macOS
+            arch: AppleSilicon
+            runner: macos-latest
+            artifact: AI-Vision-Assistant-macOS-AppleSilicon
+            pyinstaller_extra: ""
+
+          - os: Linux
+            arch: x64
+            runner: ubuntu-latest
+            artifact: AI-Vision-Assistant-Linux-x64
+            pyinstaller_extra: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Linux: install Qt system dependencies required by PyQt6
+      - name: Install Qt system deps (Linux only)
+        if: matrix.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libxcb-xinerama0 \
+            libxcb-cursor0 \
+            libxkbcommon-x11-0 \
+            libgl1 \
+            libglib2.0-0 \
+            libegl1 \
+            libdbus-1-3
+
+      - name: Install Python dependencies
+        working-directory: AI_vision_translate_assistant
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller (Windows)
+        if: matrix.os == 'Windows'
+        working-directory: AI_vision_translate_assistant
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --onefile `
+            --windowed `
+            --name "AI-Vision-Assistant" `
+            main.py
+
+      - name: Build with PyInstaller (macOS / Linux)
+        if: matrix.os != 'Windows'
+        working-directory: AI_vision_translate_assistant
+        run: |
+          pyinstaller \
+            --onefile \
+            --windowed \
+            --name "AI-Vision-Assistant" \
+            main.py
+
+      # Rename dist output to the platform-specific artifact name
+      - name: Rename artifact (Windows)
+        if: matrix.os == 'Windows'
+        shell: pwsh
+        run: |
+          $src = "AI_vision_translate_assistant\dist\AI-Vision-Assistant.exe"
+          $dst = "AI_vision_translate_assistant\dist\${{ matrix.artifact }}"
+          Move-Item $src $dst
+
+      - name: Rename artifact (macOS / Linux)
+        if: matrix.os != 'Windows'
+        run: |
+          mv AI_vision_translate_assistant/dist/AI-Vision-Assistant \
+             AI_vision_translate_assistant/dist/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: AI_vision_translate_assistant/dist/${{ matrix.artifact }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for release notes)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Collect changelog since previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log "${PREV_TAG}..${TAG}" --pretty="- %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log "${TAG}" --pretty="- %s (%h)" --no-merges | head -20)
+          fi
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AI Vision Translate Assistant ${{ github.ref_name }}"
+          body: |
+            ## AI Vision Translate Assistant ${{ github.ref_name }}
+
+            Windows desktop floating assistant — capture any screen region with `Ctrl+CapsLock` and get AI-powered translation or code analysis instantly.
+
+            ### 📦 Downloads
+
+            | Platform | File |
+            |---|---|
+            | Windows x64 | `AI-Vision-Assistant-Windows-x64.exe` |
+            | Windows ARM64 | `AI-Vision-Assistant-Windows-arm64.exe` |
+            | macOS Intel | `AI-Vision-Assistant-macOS-Intel` |
+            | macOS Apple Silicon | `AI-Vision-Assistant-macOS-AppleSilicon` |
+            | Linux x64 | `AI-Vision-Assistant-Linux-x64` |
+
+            ### 🚀 Quick Setup
+
+            1. Download the binary for your platform
+            2. Create a `.env` file next to the binary:
+               ```env
+               KIMI_API_KEY=sk-your-key-here
+               KIMI_API_BASE=https://api.moonshot.cn/v1
+               KIMI_MODEL=kimi-k2.5
+               ```
+            3. Run the binary — look for the tray icon
+
+            ### 📝 Changes
+
+            ${{ steps.notes.outputs.changelog }}
+
+            ---
+            Full documentation: [README.md](https://github.com/${{ github.repository }}/blob/main/AI_vision_translate_assistant/README.md)
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/**/*
