@@ -94,6 +94,34 @@ class SettingsWindow(QDialog):
         lay.addLayout(tb)
         lay.addWidget(self._sep())
 
+        # API history dropdown
+        api_hist_row = QHBoxLayout()
+        api_hist_lbl = QLabel("历史 API")
+        api_hist_lbl.setFixedWidth(90)
+        api_hist_lbl.setStyleSheet(_LABEL_STYLE)
+        self._api_history_combo = QComboBox()
+        self._api_history_combo.setStyleSheet("""
+            QComboBox {
+                background: rgba(255,255,255,8);
+                border: 1px solid rgba(255,255,255,20);
+                border-radius: 6px;
+                color: #d0d0d0;
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView {
+                background: rgba(40,40,40,252);
+                color: #d0d0d0;
+                selection-background-color: rgba(91,143,249,100);
+                border: 1px solid rgba(255,255,255,20);
+            }
+        """)
+        self._api_history_combo.currentIndexChanged.connect(self._on_api_history_selected)
+        api_hist_row.addWidget(api_hist_lbl)
+        api_hist_row.addWidget(self._api_history_combo)
+        lay.addLayout(api_hist_row)
+
         # API Key row (with eye toggle)
         key_row = QHBoxLayout()
         key_lbl = QLabel("API Key")
@@ -257,6 +285,16 @@ class SettingsWindow(QDialog):
         self._panel_title_edit.setText(self._config_store.get("panel_title", ""))
         self._prompt_edit.setPlainText(self._config_store.get("system_prompt", ""))
 
+        api_history: list[dict] = self._config_store.get("api_history", [])
+        self._api_history_combo.blockSignals(True)
+        self._api_history_combo.clear()
+        self._api_history_combo.addItem("选择历史 API 组合...")
+        for entry in api_history:
+            key_tail = entry.get("api_key", "")[-6:] if entry.get("api_key") else ""
+            display = f"{entry.get('model', '未知')}  |  ...{key_tail}  |  {entry.get('api_base', '')}"
+            self._api_history_combo.addItem(display, entry)
+        self._api_history_combo.blockSignals(False)
+
         history: list[str] = self._config_store.get("prompt_history", [])
         self._history_combo.blockSignals(True)
         self._history_combo.clear()
@@ -267,6 +305,16 @@ class SettingsWindow(QDialog):
         self._history_combo.blockSignals(False)
 
     # ── Interactions ──────────────────────────────────────────────────────────
+
+    def _on_api_history_selected(self, index: int):
+        """Auto-fill API Key / Base URL / Model when user picks a history entry."""
+        if index <= 0:
+            return
+        entry = self._api_history_combo.itemData(index)
+        if entry:
+            self._key_edit.setText(entry.get("api_key", ""))
+            self._base_edit.setText(entry.get("api_base", ""))
+            self._model_edit.setText(entry.get("model", ""))
 
     def _on_history_selected(self, index: int):
         if index <= 0:
@@ -324,11 +372,20 @@ class SettingsWindow(QDialog):
             history = history[:10]
         self._config_store["prompt_history"] = history
 
+        # 3b. Update API history (prepend if new combo, cap at 10)
+        current_combo = {"api_key": api_key, "api_base": api_base, "model": model}
+        api_history: list[dict] = list(self._config_store.get("api_history", []))
+        if current_combo not in api_history:
+            api_history.insert(0, current_combo)
+            api_history = api_history[:10]
+        self._config_store["api_history"] = api_history
+
         # 4. Persist UI settings to settings.json
         save_settings({
             "panel_title": panel_title,
             "system_prompt": system_prompt,
             "prompt_history": history,
+            "api_history": api_history,
         })
 
         logger.debug("Settings saved")

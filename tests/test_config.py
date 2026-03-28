@@ -180,3 +180,35 @@ def test_load_config_model_defaults_to_kimi_k25(tmp_path, monkeypatch):
     from config import load_config
     result = load_config(str(env_file))
     assert result["model"] == "kimi-k2.5"
+
+
+# ── API history tests ─────────────────────────────────────────────────────────
+
+def test_load_settings_includes_empty_api_history_by_default(tmp_path, monkeypatch):
+    """load_settings() returns api_history=[] when settings.json is absent."""
+    monkeypatch.setattr(config_module, "SETTINGS_PATH", tmp_path / "settings.json")
+    result = load_settings()
+    assert result["api_history"] == []
+
+
+def test_load_settings_reads_api_history(tmp_path, monkeypatch):
+    """load_settings() returns api_history list from existing settings.json."""
+    f = tmp_path / "settings.json"
+    history = [{"api_key": "sk-a", "api_base": "https://a.com/v1", "model": "m1"}]
+    f.write_text(json.dumps({"api_history": history}), encoding="utf-8")
+    monkeypatch.setattr(config_module, "SETTINGS_PATH", f)
+    result = load_settings()
+    assert result["api_history"] == history
+
+
+def test_save_settings_persists_api_history(tmp_path, monkeypatch):
+    """save_settings() writes api_history to settings.json and load_settings() reads it back."""
+    f = tmp_path / "settings.json"
+    monkeypatch.setattr(config_module, "SETTINGS_PATH", f)
+    history = [
+        {"api_key": "sk-1", "api_base": "https://one.com/v1", "model": "model-a"},
+        {"api_key": "sk-2", "api_base": "https://two.com/v1", "model": "model-b"},
+    ]
+    save_settings({"api_history": history})
+    raw = json.loads(f.read_text(encoding="utf-8"))
+    assert raw["api_history"] == history

@@ -19,6 +19,7 @@ _DEFAULT_SETTINGS = {
     "panel_title": "朱鸿宇的AI翻译助手",
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
     "prompt_history": [],
+    "api_history": [],
 }
 
 
@@ -63,11 +64,12 @@ def load_settings() -> dict:
 
 
 def save_settings(data: dict) -> None:
-    """Write panel_title / system_prompt / prompt_history to settings.json."""
+    """Write panel_title / system_prompt / prompt_history / api_history to settings.json."""
     payload = {
         "panel_title": data.get("panel_title", _DEFAULT_SETTINGS["panel_title"]),
         "system_prompt": data.get("system_prompt", _DEFAULT_SETTINGS["system_prompt"]),
         "prompt_history": data.get("prompt_history", []),
+        "api_history": data.get("api_history", []),
     }
     SETTINGS_PATH.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
