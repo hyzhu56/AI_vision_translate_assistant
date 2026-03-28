@@ -1,17 +1,50 @@
 import argparse
 import logging
 import sys
+from collections import deque
 
 from PyQt6.QtCore import QRect
 from PyQt6.QtWidgets import QApplication
 
-from config import load_config
-from core.api_client import ApiWorker
+from config import load_config, load_settings
 from core.hotkey_listener import HotkeyThread
 from core.screenshot import crop_region, grab_fullscreen, image_to_base64
 from ui.floating_panel import FloatingPanel
 from ui.overlay_window import OverlayWindow
 from ui.tray_icon import create_tray_icon
+
+
+class PanelManager:
+    """FIFO pool of at most MAX FloatingPanel instances."""
+
+    MAX = 2
+
+    def __init__(self):
+        self._panels: deque[FloatingPanel] = deque()
+
+    def acquire(self, config_store: dict) -> FloatingPanel:
+        """Return a new panel, evicting the oldest one if at capacity."""
+        if len(self._panels) >= self.MAX:
+            oldest = self._panels.popleft()
+            oldest.cleanup()
+            try:
+                oldest.panel_closing.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            oldest.hide()
+            oldest.deleteLater()
+        panel = FloatingPanel(config_store)
+        panel.panel_closing.connect(self._on_closing)
+        self._panels.append(panel)
+        return panel
+
+    def _on_closing(self, panel: FloatingPanel):
+        """Called when the user clicks ✕ on a panel."""
+        if panel in self._panels:
+            self._panels.remove(panel)
+        panel.cleanup()
+        panel.hide()
+        panel.deleteLater()
 
 
 def main():
@@ -25,23 +58,25 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
-    # Load config
     try:
-        config = load_config()
+        env_cfg = load_config()
     except (FileNotFoundError, ValueError) as e:
         logger.error("Configuration error: %s", e)
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    settings = load_settings()
+    config_store: dict = {**env_cfg, **settings}
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # Components
-    panel = FloatingPanel()
-    tray = create_tray_icon(app)
+    manager = PanelManager()
 
-    # State
-    state = {"screenshot": None, "overlay": None, "worker": None}
+    # Placeholder — settings window wired in Task 6
+    tray = create_tray_icon(app, on_settings=lambda: None)
+
+    state: dict = {"screenshot": None, "overlay": None}
 
     def on_hotkey_triggered():
         logger.info("Hotkey triggered")
@@ -60,7 +95,6 @@ def main():
         if screenshot is None:
             return
 
-        # Scale logical-pixel region to physical pixels for PIL crop
         dpr = QApplication.primaryScreen().devicePixelRatio()
         cropped = crop_region(
             screenshot,
@@ -69,17 +103,10 @@ def main():
         )
         b64 = image_to_base64(cropped)
 
-        panel.clear_content()
+        panel = manager.acquire(config_store)
         panel.show_near_region(region)
+        panel.start_session(b64)
 
-        worker = ApiWorker(config["api_key"], config["api_base"], b64)
-        worker.stream_chunk.connect(panel.append_chunk)
-        worker.stream_done.connect(lambda: logger.info("Stream complete"))
-        worker.stream_error.connect(panel.show_error)
-        worker.start()
-        state["worker"] = worker
-
-    # Hotkey thread
     hotkey_thread = HotkeyThread()
     hotkey_thread.triggered.connect(on_hotkey_triggered)
     hotkey_thread.start()
