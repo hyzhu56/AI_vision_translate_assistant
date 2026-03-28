@@ -12,7 +12,7 @@ from core.screenshot import crop_region, grab_fullscreen, image_to_base64
 from ui.floating_panel import FloatingPanel
 from ui.overlay_window import OverlayWindow
 from ui.settings_window import SettingsWindow
-from ui.tray_icon import create_tray_icon
+from ui.tray_icon import create_tray_icon, load_app_icon
 
 
 class PanelManager:
@@ -76,6 +76,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setWindowIcon(load_app_icon())  # taskbar / Alt+Tab icon
 
     manager = PanelManager()
 
