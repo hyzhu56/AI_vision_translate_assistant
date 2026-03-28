@@ -59,12 +59,17 @@ def main():
     )
     logger = logging.getLogger(__name__)
 
+    need_setup = False
     try:
         env_cfg = load_config()
     except (FileNotFoundError, ValueError) as e:
-        logger.error("Configuration error: %s", e)
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        logger.warning("Configuration not ready: %s — launching with defaults", e)
+        env_cfg = {
+            "api_key": "",
+            "api_base": "https://api.moonshot.cn/v1",
+            "model": "kimi-k2.5",
+        }
+        need_setup = True
 
     settings = load_settings()
     config_store: dict = {**env_cfg, **settings}
@@ -79,6 +84,10 @@ def main():
         win.exec()
 
     tray = create_tray_icon(app, on_settings=open_settings)
+
+    # First launch without .env: open settings so the user can enter API key
+    if need_setup:
+        open_settings()
 
     state: dict = {"screenshot": None, "overlay": None}
 

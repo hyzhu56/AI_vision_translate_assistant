@@ -1,11 +1,24 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-ENV_PATH = Path(__file__).parent / ".env"
-SETTINGS_PATH = Path(__file__).parent / "settings.json"
+
+def _app_dir() -> Path:
+    """Return the directory where the application lives.
+
+    PyInstaller --onefile: sys.executable is the .exe → use its parent.
+    Normal Python:         use the directory containing this source file.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
+
+ENV_PATH = _app_dir() / ".env"
+SETTINGS_PATH = _app_dir() / "settings.json"
 
 DEFAULT_SYSTEM_PROMPT = (
     "你是一个智能视觉助手。请分析用户提供的图片。"
@@ -23,13 +36,13 @@ _DEFAULT_SETTINGS = {
 }
 
 
-def load_config(env_path: str = ".env") -> dict:
+def load_config(env_path: str | None = None) -> dict:
     """Load and validate configuration from .env file.
 
     Returns dict with keys: api_key, api_base, model.
     Raises FileNotFoundError if .env missing, ValueError if keys invalid.
     """
-    env_file = Path(env_path)
+    env_file = Path(env_path) if env_path is not None else ENV_PATH
     if not env_file.exists():
         raise FileNotFoundError(f".env file not found at: {env_path}")
 
