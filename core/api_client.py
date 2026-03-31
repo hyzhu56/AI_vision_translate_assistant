@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from openai import OpenAI
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -29,7 +30,9 @@ class ApiWorker(QThread):
                 model=self._config_store["model"],
                 messages=self._messages,
                 stream=True,
-                timeout=15,
+                # connect: TCP handshake; read: inter-chunk silence (vision
+                # models can take >10 s before first token); write: upload.
+                timeout=httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=5.0),
             )
             chunk_count = 0
             for chunk in response:

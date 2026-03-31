@@ -1,6 +1,6 @@
 import logging
 
-from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRect, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -92,7 +92,15 @@ class FloatingPanel(QWidget):
         self._drag_pos: QPoint | None = None
         self._messages: list[dict] = []
         self._streaming_buffer: str = ""
+        self._pending_chunks: list[str] = []
         self._current_worker: ApiWorker | None = None
+
+        # Render timer: flushes _pending_chunks to UI every 30 ms.
+        # Decouples network chunk rate from paint frequency so chunks
+        # never pile up in the Qt event queue and appear all at once.
+        self._render_timer = QTimer(self)
+        self._render_timer.setInterval(30)
+        self._render_timer.timeout.connect(self._flush_pending_chunks)
 
         self._setup_window()
         self._setup_ui()
@@ -317,6 +325,8 @@ class FloatingPanel(QWidget):
         """Create and start an ApiWorker for the current _messages list."""
         self._input_line.setEnabled(False)
         self._streaming_buffer = ""
+        self._pending_chunks.clear()
+        self._browser.setPlainText("⏳ 正在分析…")
         worker = ApiWorker(self._config_store, list(self._messages))
         worker.stream_chunk.connect(self._on_chunk)
         worker.stream_done.connect(self._on_stream_done)
@@ -325,8 +335,21 @@ class FloatingPanel(QWidget):
         self._current_worker = worker
 
     def _on_chunk(self, text: str):
-        """Append raw text during streaming for performance."""
+        """Buffer incoming chunk; QTimer flushes to UI on its own cadence."""
         self._streaming_buffer += text
+        if not self._pending_chunks:
+            # First chunk: clear the "⏳" placeholder immediately
+            self._browser.clear()
+        self._pending_chunks.append(text)
+        if not self._render_timer.isActive():
+            self._render_timer.start()
+
+    def _flush_pending_chunks(self):
+        """Called by _render_timer every 30 ms — paints buffered chunks at once."""
+        if not self._pending_chunks:
+            return
+        text = "".join(self._pending_chunks)
+        self._pending_chunks.clear()
         cursor = self._browser.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         self._browser.setTextCursor(cursor)
@@ -337,6 +360,8 @@ class FloatingPanel(QWidget):
 
     def _on_stream_done(self):
         """Store assistant reply in history; re-render full Markdown."""
+        self._render_timer.stop()
+        self._flush_pending_chunks()   # paint any last buffered chunks
         self._messages.append(
             {"role": "assistant", "content": self._streaming_buffer}
         )
@@ -347,6 +372,8 @@ class FloatingPanel(QWidget):
 
     def _on_stream_error(self, message: str):
         """Append red error text without clearing existing content."""
+        self._render_timer.stop()
+        self._pending_chunks.clear()
         self._streaming_buffer = ""
         cursor = self._browser.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
@@ -424,8 +451,10 @@ class FloatingPanel(QWidget):
         self.activateWindow()
 
     def clear_content(self):
+        self._render_timer.stop()
         self._messages = []
         self._streaming_buffer = ""
+        self._pending_chunks.clear()
         self._browser.clear()
 
     def focusOutEvent(self, event):
