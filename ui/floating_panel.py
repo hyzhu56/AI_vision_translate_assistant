@@ -93,6 +93,7 @@ class FloatingPanel(QWidget):
         self._messages: list[dict] = []
         self._streaming_buffer: str = ""
         self._pending_chunks: list[str] = []
+        self._first_chunk: bool = True   # cleared once per session on first chunk
         self._current_worker: ApiWorker | None = None
 
         # Render timer: flushes _pending_chunks to UI every 30 ms.
@@ -326,6 +327,7 @@ class FloatingPanel(QWidget):
         self._input_line.setEnabled(False)
         self._streaming_buffer = ""
         self._pending_chunks.clear()
+        self._first_chunk = True
         self._browser.setPlainText("⏳ 正在分析…")
         worker = ApiWorker(self._config_store, list(self._messages))
         worker.stream_chunk.connect(self._on_chunk)
@@ -337,9 +339,13 @@ class FloatingPanel(QWidget):
     def _on_chunk(self, text: str):
         """Buffer incoming chunk; QTimer flushes to UI on its own cadence."""
         self._streaming_buffer += text
-        if not self._pending_chunks:
-            # First chunk: clear the "⏳" placeholder immediately
+        if self._first_chunk:
+            # Clear the "⏳" placeholder exactly once per session.
+            # Must NOT use _pending_chunks emptiness for this check —
+            # _flush_pending_chunks clears that list every 30 ms, so using it
+            # would re-trigger clear() on every subsequent flush batch.
             self._browser.clear()
+            self._first_chunk = False
         self._pending_chunks.append(text)
         if not self._render_timer.isActive():
             self._render_timer.start()
